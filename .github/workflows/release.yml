@@ -1,0 +1,67 @@
+name: release
+
+# 打 tag 就发版：v0.0.0.1.6 -> 跑测试 -> 构建 APK -> 建 GitHub Release。
+#
+# 版本号的**唯一真源是 tag**：构建时用 tag 覆盖 versionName/versionCode，
+# 代码里不维护"当前版本"，所以不会出现两边版本漂移。
+on:
+  push:
+    tags: ["beta-*", "Beta-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v3
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v3
+
+      # 版本号以 tag 为准（代码里不维护"当前版本"）
+      - name: Apply version from tag
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python tools/apply_version.py "$RELEASE_TAG"
+
+      - name: Build APK
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Prepare release notes
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python tools/release_notes.py "$RELEASE_TAG" > release-notes.md && cat release-notes.md
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          gh release create "$RELEASE_TAG" \
+            --title "MollyPaw Android ${VERSION}" \
+            --notes-file release-notes.md \
+            app/build/outputs/apk/release/*.apk || echo "Release 已存在，跳过"

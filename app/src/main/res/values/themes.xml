@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      配色严格来自 BRAND.md（摩尼棕 + 摩尼白 + 爪印橙）。
+      品牌禁忌：不用冷色当主色、不用纯黑当正文色。
+    -->
+    <style name="Theme.MollyPawRemote" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">#6B4226</item>
+        <item name="android:colorPrimaryDark">#3A2A1A</item>
+        <item name="android:colorAccent">#D4823A</item>
+        <item name="android:windowBackground">#FFF8F0</item>
+        <item name="android:statusBarColor">#6B4226</item>
+        <item name="android:navigationBarColor">#FFF8F0</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

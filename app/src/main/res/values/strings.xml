@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MollyPaw 远程</string>
+
+    <!-- 通知渠道 -->
+    <string name="channel_service_name">后台连接</string>
+    <string name="channel_service_desc">保持与电脑的连接</string>
+    <string name="channel_message_name">新消息</string>
+    <string name="channel_message_desc">电脑端 AI 的回复</string>
+    <string name="channel_approval_name">待审批</string>
+    <string name="channel_approval_desc">AI 请求执行操作时提醒你</string>
+
+    <string name="notif_connected">已连接到电脑</string>
+    <string name="notif_connecting">正在连接电脑…</string>
+    <string name="notif_disconnected">与电脑断开，正在重连</string>
+</resources>
