@@ -12,3 +12,6 @@ local.properties
 *.apk
 *.aab
 outputs/
+
+# Gradle wrapper 的 jar 必须入库 —— CI 靠它才能跑 ./gradlew
+!gradle/wrapper/gradle-wrapper.jar
