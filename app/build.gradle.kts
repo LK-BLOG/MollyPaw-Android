@@ -13,7 +13,8 @@ android {
         applicationId = "com.mollypaw.remote"
         minSdk = 26
         targetSdk = 35
-        // 版本号与主线保持一致（主仓库 PLAN.md: Beta 0.0.0.1.5）。
+        // 版本号与主线保持一致。发布时由 tools/apply_version.py 按 tag 覆盖，
+        // 这里的值只是本地开发的默认值。
         // 两边同版本号，排查问题时能一眼对上是谁的哪个版本。
         versionCode = 200
         versionName = "0.0.0.2.0"

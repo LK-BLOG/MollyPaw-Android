@@ -18,13 +18,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v3
 
+      # GitHub runner 在美国，走国内阿里云镜像又慢又不稳（还经常 502）。
+      # -DmollypawMirror=official 让 settings.gradle.kts 改成官方源优先。
       - name: Unit tests
         # 跨实现一致性测试在这里跑：
         # Android 端算出的 room / pair_key / session_key 必须和 Python 端一致。
-        run: ./gradlew :app:testDebugUnitTest --no-daemon
+        run: ./gradlew :app:testDebugUnitTest --no-daemon -DmollypawMirror=official
 
       - name: Lint
-        run: ./gradlew :app:lintDebug --no-daemon || true
+        run: ./gradlew :app:lintDebug --no-daemon -DmollypawMirror=official || true
 
   build:
     needs: test
@@ -37,7 +39,7 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v3
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon
+        run: ./gradlew :app:assembleDebug --no-daemon -DmollypawMirror=official
       - uses: actions/upload-artifact@v4
         with:
           name: MollyPaw-Android-debug

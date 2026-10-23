@@ -23,7 +23,7 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v3
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon
+        run: ./gradlew :app:testDebugUnitTest --no-daemon -DmollypawMirror=official
 
   build:
     needs: test
@@ -46,7 +46,7 @@ jobs:
         run: python tools/apply_version.py "$RELEASE_TAG"
 
       - name: Build APK
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:assembleRelease --no-daemon -DmollypawMirror=official
 
       - name: Prepare release notes
         if: github.ref_type == 'tag'

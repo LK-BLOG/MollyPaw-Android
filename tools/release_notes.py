@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """从 CHANGELOG.md 里抠出指定版本的正文，用于 GitHub Release。
 
-CHANGELOG 与主仓库共用一份（在主仓库里），这个脚本会去找它；
+CHANGELOG 就在本仓库里（Android 自己的 CHANGELOG.md）。
 找不到就回落成一行标题，不让发布流程因为「还没写 CHANGELOG」而中断。
 """
 from __future__ import annotations
@@ -13,21 +13,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def find_changelog() -> Path | None:
-    candidates = [
-        ROOT / "CHANGELOG.md",
-        ROOT.parent / "MollyPaw" / "CHANGELOG.md",
-        ROOT.parent / "MollyPaw Agent" / "CHANGELOG.md",
-    ]
-    for path in candidates:
-        if path.is_file():
-            return path
-    return None
+def normalize_tag(tag: str) -> str:
+    """从 tag 取纯版本号（v0.0.0.1 / Beta-0.0.0.1.4 / beta-0.0.0.2.0 都行）。
+
+    注意不能只 lstrip("v") —— "beta-0.0.0.2.0" 剥不掉前缀，
+    会导致正则匹配不到段落，release 说明直接变空。
+    """
+    match = re.search(r"(\d[\d.]*)$", tag.strip())
+    return match.group(1) if match else tag.strip().lstrip("v")
 
 
 def notes(version: str) -> str:
-    changelog = find_changelog()
-    if changelog is None:
+    changelog = ROOT / "CHANGELOG.md"
+    if not changelog.is_file():
         return f"MollyPaw Android {version}"
     text = changelog.read_text(encoding="utf-8")
     match = re.search(rf"^## \[{re.escape(version)}\].*?$", text, re.M)
@@ -42,7 +40,10 @@ def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print("用法: python tools/release_notes.py vX.Y.Z", file=sys.stderr)
         return 2
-    print(notes(argv[1].lstrip("v")))
+    # Windows 控制台默认 GBK，中文和符号会炸 —— 强制 UTF-8 输出。
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    print(notes(normalize_tag(argv[1])))
     return 0
 
 
