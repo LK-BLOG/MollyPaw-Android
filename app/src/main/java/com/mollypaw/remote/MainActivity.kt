@@ -43,6 +43,7 @@ import com.mollypaw.remote.data.Repository
 import com.mollypaw.remote.service.RelayService
 import com.mollypaw.remote.ui.ChatScreen
 import com.mollypaw.remote.ui.MollyColors
+import com.mollypaw.remote.ui.QrScanScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -137,7 +138,21 @@ private fun PairScreen(
 ) {
     var code by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("我的手机") }
+    var scanning by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    if (scanning) {
+        QrScanScreen(
+            onDecoded = { text ->
+                scanning = false
+                code = text
+                // 扫到就直接连，别让用户再点一次「连接」
+                onPair(text.trim(), name.trim())
+            },
+            onClose = { scanning = false },
+        )
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -160,7 +175,27 @@ private fun PairScreen(
             color = MollyColors.MidBrown,
             lineHeight = 21.sp,
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
+
+        // 扫码是主路径：电脑上显示二维码，手机对着扫一下就完事
+        Button(
+            onClick = { scanning = true },
+            enabled = !busy,
+            colors = ButtonDefaults.buttonColors(containerColor = MollyColors.Orange),
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+        ) {
+            Text("扫 码 配 对", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "电脑上：设置 → 远程互联 → 开启远程互联 → 添加设备。",
+            fontSize = 12.sp,
+            color = MollyColors.Tan,
+        )
+
+        Spacer(Modifier.height(20.dp))
+        Text("或者手动粘贴配对码：", fontSize = 13.sp, color = MollyColors.MidBrown)
+        Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
             value = code,

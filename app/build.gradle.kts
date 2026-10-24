@@ -16,8 +16,8 @@ android {
         // 版本号与主线保持一致。发布时由 tools/apply_version.py 按 tag 覆盖，
         // 这里的值只是本地开发的默认值。
         // 两边同版本号，排查问题时能一眼对上是谁的哪个版本。
-        versionCode = 200
-        versionName = "0.0.0.2.0"
+        versionCode = 201
+        versionName = "0.0.0.2.1"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -105,6 +105,15 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+
+    // 扫码配对：CameraX 负责取景，ZXing core 负责解码。
+    // 不用 ML Kit —— 那玩意要 GMS，国产机很多没有，而且包会大一圈。
+    val cameraxVersion = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("com.google.zxing:core:3.5.3")
 
     // X25519：Android JCA 没有原生实现，用 BouncyCastle。
     // AES-GCM / HKDF 用 JCA 自带的（HKDF 手写，见 crypto/Hkdf.kt）。

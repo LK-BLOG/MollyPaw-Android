@@ -96,8 +96,22 @@ class Repository(private val context: Context) {
                     devId = devId,
                     listener = listener,
                 )
-                val result = client.pairAndReconnect(pairingCode, deviceName)
-                    ?: error("配对失败：没收到响应")
+                val result = try {
+                    client.pairAndReconnect(pairingCode, deviceName)
+                } catch (e: Exception) {
+                    null
+                } ?: run {
+                    // 这里的失败原因必须说人话：真机上最常见的就是
+                    // 「电脑压根没开远程互联」，而不是配对码错。
+                    client.stop("pair failed")
+                    error(
+                        if (!client.keyReady)
+                            "电脑没在线。请确认电脑上打开了「设置 → 远程互联 → 开启远程互联」，" +
+                                "并且配对码是刚生成的（15 分钟内有效）。"
+                        else
+                            "配对码没被接受。可能已过期或被用过，请在电脑上重新点「添加设备」。"
+                    )
+                }
 
                 val creds = Credentials(
                     url = url,
@@ -111,6 +125,11 @@ class Repository(private val context: Context) {
                     error("服务端没有下发主密钥，配对无法完成")
                 } else {
                     CredentialsStore.save(context, creds)
+                    // 这条配对专用的连接必须掐掉再交给常驻服务。
+                    // 否则房间里会同时有两个同 devId 的 socket，
+                    // 电脑端 _peers 被后者覆盖，请求全落到旧连接上 —— 表现是
+                    // 「配对明明成功，但发消息永远超时」。
+                    client.stop("hand off to service")
                     // 配对完成后启动常驻服务
                     RelayService.start(context)
                     creds
