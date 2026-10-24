@@ -60,7 +60,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
-          VERSION="${RELEASE_TAG#v}"
+          # tag 是 beta-0.0.0.2.0 这种，${RELEASE_TAG#v} 去不掉 beta- 前缀，
+          # 标题会变成 "MollyPaw Android beta-0.0.0.2.0"。用和 release_notes.py 一致的规则取版本号。
+          VERSION=$(python -c "import re,sys; m=re.search(r'(\\d[\\d.]*)$', sys.argv[1]); print(m.group(1) if m else sys.argv[1])" "$RELEASE_TAG")
           gh release create "$RELEASE_TAG" \
             --title "MollyPaw Android ${VERSION}" \
             --notes-file release-notes.md \
