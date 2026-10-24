@@ -28,7 +28,7 @@
 
 ### 下载
 
-- `app-debug.apk` / `app-release.apk`（GitHub Release 附件）
+- `app-release.apk`（GitHub Release 附件，已签名，可直接装）
 
 ### 验证
 
