@@ -21,6 +21,20 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    // 发布签名：仓库里自带一个 beta 自签证书（keystore/mollypaw-release.jks）。
+    // 这是开源 sideload 的常规做法 —— 不走 Google Play，签名只用来让系统认得出
+    // 「同一个 App 的升级」。密钥和口令都在仓库里，明摆着不当事密。
+    // 不加这段的话 assembleRelease 只会产出 app-release-unsigned.apk，
+    // 用户下载后点安装会直接「应用未安装」。
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("keystore/mollypaw-release.jks")
+            storePassword = "mollypaw123"
+            keyAlias = "mollypaw"
+            keyPassword = "mollypaw123"
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -30,6 +44,7 @@ android {
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             buildConfigField("String", "DEFAULT_RELAY_URL",
                 "\"wss://mollypaw-online.pages.dev/server\"")
             proguardFiles(

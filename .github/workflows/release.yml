@@ -63,7 +63,16 @@ jobs:
           # tag 是 beta-0.0.0.2.0 这种，${RELEASE_TAG#v} 去不掉 beta- 前缀，
           # 标题会变成 "MollyPaw Android beta-0.0.0.2.0"。用和 release_notes.py 一致的规则取版本号。
           VERSION=$(python -c "import re,sys; m=re.search(r'(\\d[\\d.]*)$', sys.argv[1]); print(m.group(1) if m else sys.argv[1])" "$RELEASE_TAG")
-          gh release create "$RELEASE_TAG" \
-            --title "MollyPaw Android ${VERSION}" \
-            --notes-file release-notes.md \
-            app/build/outputs/apk/release/*.apk || echo "Release 已存在，跳过"
+          # upsert：已存在就改文案 + 覆盖资产，别静默跳过
+          # （之前 || echo 会把这个错误也吞掉，看着绿其实没发出去）
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "MollyPaw Android ${VERSION}" \
+              --notes-file release-notes.md
+            gh release upload "$RELEASE_TAG" app/build/outputs/apk/release/*.apk --clobber
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "MollyPaw Android ${VERSION}" \
+              --notes-file release-notes.md \
+              app/build/outputs/apk/release/*.apk
+          fi
