@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -19,6 +20,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -45,6 +53,24 @@ class RelayService : Service(), RelayClient.Listener {
         private const val NOTIF_ID_SERVICE = 1001
         private const val NOTIF_ID_MESSAGE = 1002
         private const val NOTIF_ID_APPROVAL_BASE = 2000
+
+        /** 常驻进程的全局状态/事件流：UI 不依赖 Service 实例。 */
+        private val _stateFlow = MutableStateFlow("stopped")
+        val stateFlow: StateFlow<String> = _stateFlow.asStateFlow()
+
+        private val _eventFlow = MutableSharedFlow<Pair<String, JSONObject?>>(
+            extraBufferCapacity = 128,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+        val eventFlow: SharedFlow<Pair<String, JSONObject?>> = _eventFlow.asSharedFlow()
+
+        private fun publishState(value: String) {
+            _stateFlow.value = value
+        }
+
+        private fun publishEvent(method: String, params: JSONObject?) {
+            _eventFlow.tryEmit(method to params)
+        }
 
         /** 服务实例，供 UI 观察状态（简化做法，正式项目应改成 binder/flow）。 */
         @Volatile
@@ -124,12 +150,15 @@ class RelayService : Service(), RelayClient.Listener {
             )
 
             client?.stop()
+            publishState("connecting")
             val c = RelayClient(
                 url = creds.url,
                 room = com.mollypaw.remote.crypto.Proto.deriveRoom(creds.psk),
                 role = ProtoConst.ROLE_APP,
                 devId = creds.devId,
                 listener = this@RelayService,
+                authToken = creds.token,
+                proxySpec = emulatorProxy(),
             )
             c.keyMaterial = creds.psk
             client = c
@@ -137,9 +166,33 @@ class RelayService : Service(), RelayClient.Listener {
         }
     }
 
+    private fun emulatorProxy(): String? {
+        return try {
+            val fp = Build.FINGERPRINT.lowercase()
+            val hw = Build.HARDWARE.lowercase()
+            val product = Build.PRODUCT.lowercase()
+            val model = Build.MODEL.lowercase()
+            val emulator = fp.contains("generic") || fp.contains("emulator") ||
+                hw.contains("goldfish") || hw.contains("ranchu") ||
+                hw.contains("vbox") || hw.contains("intel") ||
+                product.contains("sdk") || model.contains("sm-n9860")
+            if (!emulator) return null
+            val cm = getSystemService(ConnectivityManager::class.java)
+            val network = cm.activeNetwork ?: return null
+            val lp = cm.getLinkProperties(network) ?: return null
+            val gateway = lp.routes.firstOrNull {
+                it.isDefaultRoute && it.gateway is java.net.Inet4Address
+            }?.gateway?.hostAddress
+            if (gateway.isNullOrBlank()) null else gateway + ":7897"
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun shutdown() {
         client?.stop()
         client = null
+        publishState("stopped")
         onState("stopped", "")
     }
 
@@ -154,11 +207,13 @@ class RelayService : Service(), RelayClient.Listener {
 
     override fun onState(state: String, detail: String) {
         this.state = state
+        publishState(state)
         onStateChanged?.invoke(state)
         val text = when (state) {
-            "ready", "connected" -> getString(R.string.notif_connected)
+            "authenticated" -> getString(R.string.notif_connected)
+            "ready", "connected", "authenticating", "connecting" ->
+                getString(R.string.notif_connecting)
             "reconnecting" -> getString(R.string.notif_disconnected)
-            "connecting" -> getString(R.string.notif_connecting)
             else -> getString(R.string.notif_disconnected)
         }
         notify(NOTIF_ID_SERVICE, buildServiceNotification(text))
@@ -177,23 +232,28 @@ class RelayService : Service(), RelayClient.Listener {
             "approval.request" -> notifyApproval(params)
             else -> Unit
         }
+        publishEvent(method, params)
         onEvent?.invoke(method, params)
     }
 
     override fun onError(code: String, message: String) {
         onState("error", "$code: $message")
-        onEvent?.invoke("error", JSONObject().apply {
+        val payload = JSONObject().apply {
             put("code", code)
             put("msg", message)
-        })
+        }
+        publishEvent("error", payload)
+        onEvent?.invoke("error", payload)
     }
 
     override fun onPresence(pc: Int, app: Int, observer: Int) {
-        onEvent?.invoke("presence", JSONObject().apply {
+        val payload = JSONObject().apply {
             put("pc", pc)
             put("app", app)
             put("observer", observer)
-        })
+        }
+        publishEvent("presence", payload)
+        onEvent?.invoke("presence", payload)
     }
 
     // -- 通知 --------------------------------------------------------------
@@ -302,5 +362,5 @@ class RelayService : Service(), RelayClient.Listener {
     suspend fun request(method: String, params: JSONObject?, timeoutMs: Long = 20_000): JSONObject? =
         client?.request(method, params, timeoutMs)
 
-    fun isConnected(): Boolean = client?.keyReady == true
+    fun isConnected(): Boolean = client?.authenticated == true
 }

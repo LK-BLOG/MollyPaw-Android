@@ -39,6 +39,8 @@ class RelayClient(
     private val role: String,
     private val devId: String,
     private val listener: Listener,
+    private val authToken: String? = null,
+    proxySpec: String? = null,
 ) {
     interface Listener {
         fun onState(state: String, detail: String = "")
@@ -52,9 +54,28 @@ class RelayClient(
     var keyMaterial: String = ""
 
     private val http = OkHttpClient.Builder()
-        .pingInterval(20, TimeUnit.SECONDS)   // OkHttp 自带 WS 心跳
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS) // WS 长连接，读超时关掉
+        .apply {
+            val parsed = parseProxy(proxySpec)
+            if (parsed != null) {
+                val proxy = java.net.Proxy(
+                    java.net.Proxy.Type.HTTP,
+                    java.net.InetSocketAddress(parsed.first, parsed.second),
+                )
+                proxySelector(object : java.net.ProxySelector() {
+                    override fun select(uri: java.net.URI): List<java.net.Proxy> =
+                        listOf(proxy, java.net.Proxy.NO_PROXY)
+
+                    override fun connectFailed(
+                        uri: java.net.URI,
+                        sa: java.net.SocketAddress,
+                        ioe: java.io.IOException,
+                    ) = Unit
+                })
+            }
+        }
+        .pingInterval(20, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
     private var socket: WebSocket? = null
@@ -76,7 +97,13 @@ class RelayClient(
     /** 会话密钥是否已就绪（收到对端 hello 后）。 */
     val keyReady: Boolean get() = sessionKey != null
 
+    /** auth.req 是否已成功；只有它为 true 才能发业务请求。 */
+    @Volatile
+    var authenticated: Boolean = false
+        private set
+
     private var loopJob: Job? = null
+    private var authJob: Job? = null
 
     // -- 生命周期 ----------------------------------------------------------
 
@@ -87,6 +114,9 @@ class RelayClient(
 
     fun stop(reason: String = "user") {
         running.set(false)
+        authenticated = false
+        authJob?.cancel()
+        authJob = null
         loopJob?.cancel()
         socket?.let {
             runCatching { it.send(Frame.bye(room, role, reason).toJson()) }
@@ -137,12 +167,24 @@ class RelayClient(
         peerEph = null
         peerHs = null
         sessionKey = null
+        authenticated = false
+        authJob?.cancel()
+        authJob = null
         seq.set(0)
 
         val full = if (url.contains("?")) "$url&room=$room" else "$url?room=$room"
         val request = Request.Builder().url(full).build()
         val ws = http.newWebSocket(request, Handler())
         socket = ws
+    }
+
+    private fun parseProxy(spec: String?): Pair<String, Int>? {
+        val text = spec?.trim()?.removePrefix("http://")?.removePrefix("https://") ?: return null
+        if (text.isBlank() || ":" !in text) return null
+        val host = text.substringBeforeLast(":")
+        val port = text.substringAfterLast(":").toIntOrNull() ?: return null
+        if (host.isBlank() || port !in 1..65535) return null
+        return host to port
     }
 
     // -- 发送 --------------------------------------------------------------
@@ -281,7 +323,35 @@ class RelayClient(
             listener.onState("error", "密钥派生失败：${e.message}")
             null
         }
-        if (sessionKey != null) listener.onState("ready")
+        if (sessionKey != null) {
+            listener.onState("ready")
+            val token = authToken
+            if (!token.isNullOrBlank()) {
+                authJob?.cancel()
+                authJob = scope.launch { authenticate(token) }
+            }
+        }
+    }
+
+    private suspend fun authenticate(token: String) {
+        listener.onState("authenticating")
+        val params = JSONObject().apply {
+            put("dev_id", devId)
+            put("token", token)
+            put("ts", System.currentTimeMillis())
+        }
+        val result = try {
+            request("auth.req", params, 20_000)
+        } catch (e: Exception) {
+            listener.onState("error", "auth failed: " + e.message)
+            return
+        }
+        if (result == null) {
+            listener.onState("error", "device auth failed, pair again")
+            return
+        }
+        authenticated = true
+        listener.onState("authenticated")
     }
 
     private fun handleData(frame: Frame) {

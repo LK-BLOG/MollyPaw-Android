@@ -16,8 +16,8 @@ android {
         // 版本号与主线保持一致。发布时由 tools/apply_version.py 按 tag 覆盖，
         // 这里的值只是本地开发的默认值。
         // 两边同版本号，排查问题时能一眼对上是谁的哪个版本。
-        versionCode = 201
-        versionName = "0.0.0.2.1"
+        versionCode = 202
+        versionName = "0.0.0.2.2"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -129,3 +129,4 @@ dependencies {
     // 不引 Compose UI 测试与 navigation —— 本项目用不到，
     // 缓存里也没有，离线编译能省一批下载。
 }
+

@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,13 +42,12 @@ import com.mollypaw.remote.data.Credentials
 import com.mollypaw.remote.data.CredentialsStore
 import com.mollypaw.remote.data.Repository
 import com.mollypaw.remote.service.RelayService
-import com.mollypaw.remote.ui.ChatScreen
 import com.mollypaw.remote.ui.MollyColors
 import com.mollypaw.remote.ui.QrScanScreen
+import com.mollypaw.remote.ui.RemoteScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-
     private val repo by lazy { Repository(applicationContext) }
 
     private val notifPermission =
@@ -55,18 +55,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Android 13+ 需要通知权限，否则常驻通知发不出来
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-
         setContent {
             MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MollyColors.Cream,
-                ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MollyColors.Cream) {
                     AppRoot(repo)
                 }
             }
@@ -78,7 +72,6 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(repo: Repository) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
     var creds by remember { mutableStateOf<Credentials?>(null) }
     var checked by remember { mutableStateOf(false) }
     var pairing by remember { mutableStateOf(false) }
@@ -88,30 +81,31 @@ private fun AppRoot(repo: Repository) {
         val c = CredentialsStore.load(context)
         creds = c
         checked = true
-        if (c.paired) {
-            // 配对过 → 启动常驻服务
-            RelayService.start(context)
-        }
+        if (c.paired) RelayService.start(context)
     }
 
     if (!checked) return
 
     if (creds?.paired == true) {
-        ChatScreen(
+        RemoteScreen(
             repo = repo,
-            onSend = { text -> scope.launch { repo.send(text) } },
-            onStop = { scope.launch { repo.stop() } },
-            onApproval = { id, ok -> scope.launch { repo.replyApproval(id, ok) } },
+            onUnpair = {
+                scope.launch {
+                    context.stopService(Intent(context, RelayService::class.java))
+                    CredentialsStore.clear(context)
+                    creds = null
+                }
+            },
         )
     } else {
         PairScreen(
             busy = pairing,
             error = pairError,
-            onPair = { code, name ->
+            onPair = { code, name, relayUrl ->
                 pairing = true
                 pairError = null
                 scope.launch {
-                    val result = repo.pair(code, name)
+                    val result = repo.pair(code, name, relayUrl)
                     result.onSuccess {
                         creds = it
                         pairError = null
@@ -125,19 +119,15 @@ private fun AppRoot(repo: Repository) {
     }
 }
 
-/**
- * 配对界面。
- *
- * 用户只需要粘贴（或扫码后自动填入）那一串配对码 —— **不用手输密钥**。
- */
 @Composable
 private fun PairScreen(
     busy: Boolean,
     error: String?,
-    onPair: (String, String) -> Unit,
+    onPair: (String, String, String) -> Unit,
 ) {
     var code by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("我的手机") }
+    var relayUrl by remember { mutableStateOf("") }
     var scanning by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -146,8 +136,7 @@ private fun PairScreen(
             onDecoded = { text ->
                 scanning = false
                 code = text
-                // 扫到就直接连，别让用户再点一次「连接」
-                onPair(text.trim(), name.trim())
+                onPair(text.trim(), name.trim(), relayUrl.trim())
             },
             onClose = { scanning = false },
         )
@@ -155,55 +144,36 @@ private fun PairScreen(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            "连上你的电脑",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            color = MollyColors.DeepBrown,
-        )
+        Text("连上你的电脑", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MollyColors.DeepBrown)
         Spacer(Modifier.height(8.dp))
         Text(
-            "在电脑的 MollyPaw 设置里点「添加设备」，会显示一个二维码和一段配对码。\n" +
-                "把配对码粘贴到下面就行 —— 不用手输密钥。",
+            "在电脑的 MollyPaw 设置里点「添加设备」，会显示二维码和配对码。\n" +
+                "扫码或粘贴配对码即可连接。",
             fontSize = 14.sp,
             color = MollyColors.MidBrown,
             lineHeight = 21.sp,
         )
         Spacer(Modifier.height(20.dp))
-
-        // 扫码是主路径：电脑上显示二维码，手机对着扫一下就完事
         Button(
             onClick = { scanning = true },
             enabled = !busy,
             colors = ButtonDefaults.buttonColors(containerColor = MollyColors.Orange),
             modifier = Modifier.fillMaxWidth().height(54.dp),
-        ) {
-            Text("扫 码 配 对", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        }
+        ) { Text("扫码配对", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
         Spacer(Modifier.height(10.dp))
-        Text(
-            "电脑上：设置 → 远程互联 → 开启远程互联 → 添加设备。",
-            fontSize = 12.sp,
-            color = MollyColors.Tan,
-        )
-
+        Text("电脑上：设置 → 远程互联 → 开启远程互联 → 添加设备。", fontSize = 12.sp, color = MollyColors.Tan)
         Spacer(Modifier.height(20.dp))
         Text("或者手动粘贴配对码：", fontSize = 13.sp, color = MollyColors.MidBrown)
         Spacer(Modifier.height(8.dp))
-
         OutlinedTextField(
             value = code,
             onValueChange = { code = it },
             label = { Text("配对码") },
             placeholder = { Text("MP1.xxxxx.yyyyy", fontSize = 12.sp) },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = false,
             maxLines = 3,
         )
         Spacer(Modifier.height(12.dp))
@@ -214,40 +184,37 @@ private fun PairScreen(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
-
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = relayUrl,
+            onValueChange = { relayUrl = it },
+            label = { Text("中继地址（可选）") },
+            placeholder = { Text("留空使用官方中继") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
         error?.let {
             Spacer(Modifier.height(12.dp))
-            Text(it, color = androidx.compose.ui.graphics.Color(0xFFA94442), fontSize = 13.sp)
+            Text(it, color = MollyColors.Error, fontSize = 13.sp)
         }
-
         Spacer(Modifier.height(20.dp))
         Button(
-            onClick = { onPair(code.trim(), name.trim()) },
+            onClick = { onPair(code.trim(), name.trim(), relayUrl.trim()) },
             enabled = !busy && code.isNotBlank(),
             colors = ButtonDefaults.buttonColors(containerColor = MollyColors.Orange),
             modifier = Modifier.fillMaxWidth().height(50.dp),
-        ) {
-            Text(if (busy) "连接中…" else "连接", fontSize = 15.sp)
-        }
-
+        ) { Text(if (busy) "连接中..." else "连接", fontSize = 15.sp) }
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButtonLike("电池优化设置") {
+            TextButton(onClick = {
                 val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                 runCatching { context.startActivity(intent) }
-            }
+            }) { Text("电池优化设置", color = MollyColors.MidBrown, fontSize = 13.sp) }
         }
         Text(
-            "提示：把本应用加入电池优化白名单，否则后台连接会被系统掐断。",
+            "把本应用加入电池优化白名单，否则后台连接会被系统掐断。",
             fontSize = 12.sp,
             color = MollyColors.Tan,
         )
-    }
-}
-
-@Composable
-private fun TextButtonLike(text: String, onClick: () -> Unit) {
-    androidx.compose.material3.TextButton(onClick = onClick) {
-        Text(text, color = MollyColors.MidBrown, fontSize = 13.sp)
     }
 }

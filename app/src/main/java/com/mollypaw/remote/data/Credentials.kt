@@ -71,6 +71,12 @@ object CredentialsStore {
         context.dataStore.edit { it.clear() }
     }
 
+    suspend fun setUrl(context: Context, url: String) {
+        context.dataStore.edit { prefs ->
+            if (url.isBlank()) prefs.remove(KEY_URL) else prefs[KEY_URL] = url
+        }
+    }
+
     /** 首次运行时生成一个稳定的设备 id。 */
     fun newDeviceId(): String = UUID.randomUUID().toString()
 }
